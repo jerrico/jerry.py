@@ -1,7 +1,14 @@
+import urllib
+import hashlib
+import hmac
+import binascii
+import requests
+import json
 
 
 class Restriction(object):
-    def __init__(self, attrs):
+    def __init__(self, user, attrs):
+        self.user = user
         for key, value in attrs.iteritems():
             setattr(self, key, value)
 
@@ -36,19 +43,76 @@ class PerTimeRestriction(TotalAmountRestriction):
 
 class AccountAmountRestriction(Restriction):
     # FIME: needs to be implemented
-    def allows(self, attr, change, user=None, *args, **kwargs):
+    def allows(self, attr, change, *args, **kwargs):
         try:
-            return user.account[self.account_item] - \
+            return self.user.account[self.account_item] - \
                     (self.quantity_change * change) > 0
         except (KeyError):
             return False
 
-    def did(self, attr, change, user=None, *args, **kwargs):
-        user.account[self.account_item] -= (self.quantity_change * change)
+    def did(self, attr, change, *args, **kwargs):
+        self.user.account[self.account_item] -= (self.quantity_change * change)
+
+
+class Provider(object):
+
+    def __init__(self, key=None, secret=None,
+                end_point="http://localhost:9092/api/v1/"):
+        self.key = key
+        self.secret = secret
+        self.end_point = end_point
+
+    def _sign(self, method, url, params):
+        params["_key"] = self.key
+        encoded = urllib.urlencode(params)
+        query = "&".join((method.upper(), url, encoded))
+        encoded += "&_signature=" + urllib.quote(binascii.b2a_base64(
+                hmac.new(self.secret, query, hashlib.sha256).digest()))
+        return encoded
+
+    def did(self, user, action, quantity, *args, **kwargs):
+        return self.log(self, user, action, quantity)
+
+    def log(self, user, action, quantity=None, unit=None):
+        entry = {'action': action}
+        if quantity is not None:
+            entry['quantity'] = quantity
+        if unit is not None:
+            entry['unit'] = unit
+
+        params = {
+            'user_id': user.user_id,
+            'device_id': user.device_id,
+            'entries': json.dumps([entry])
+        }
+
+        url = self.end_point + "logger"
+        data = self._sign(url, "POST", params)
+        return self._request("POST", url, data)
+
+    def sigin(self, user_id=None, device_id=None):
+        user = JerryUser(user_id=user_id, device_id=device_id, provider=self)
+        self._signin(user)
+        return user
+
+
+class SimpleHTTPProvider(Provider):
+    def _request(self, method, url, data):
+        func = method == "POST" and requests.post or requests.get
+        return func(url, data=data)
+
+    def _signin(self, user):
+        url = self.end_point + "permission_state"
+        url += '?' + self._sign('GET', url, {
+            'user_id': user.user_id,
+            'device_id': user.device_id})
+        req = self._request('GET', url)
+        user.load_state(json.loads(req.content))
+
 
 class JerryUser(object):
 
-    PROVIDER_CLASS = None
+    PROVIDER = SimpleHTTPProvider
     RESTRICTIONS = {
         "BinaryRestriction": BinaryRestriction,
         "PerTimeRestriction": PerTimeRestriction,
@@ -56,18 +120,22 @@ class JerryUser(object):
         "AccountAmountRestriction": AccountAmountRestriction,
     }
 
-    def __init__(self, profile_state=None):
-        if profile_state:
-            self._load_state(profile_state)
+    def __init__(self, user_id, device_id=None, provider=None, profile_state=None):
+        self.provider = provider
+        self.user_id = user_id
+        self.device_id = device_id
 
-    def _load_state(self, profile_state):
+        if profile_state:
+            self.load_state(profile_state)
+
+    def load_state(self, profile_state):
         self.profile_name = profile_state.get("profile", None)
         self.default = profile_state['default'] == 'allow'
         self.restrictions = self._compile_restrictions(profile_state["states"])
         self.account = profile_state["account"]
 
     def _compile_restrictions(self, states):
-        return dict([(key, [self.RESTRICTIONS[item['class_']](item) \
+        return dict([(key, [self.RESTRICTIONS[item['class_']](self, item) \
                                 for item in values])
                         for key, values in states.iteritems()])
 
@@ -77,16 +145,22 @@ class JerryUser(object):
             return self.default
 
         for restriction in restrictions:
-            if not restriction.allows(action, change, user=self, *args, **kwargs):
+            if not restriction.allows(action, change, *args, **kwargs):
                 return False
 
         return not self.default
 
     def did(self, action, change=1, *args, **kwargs):
+        self.dirty = True
         restrictions = self.restrictions.get(action, "")
         if restrictions:
             for restriction in restrictions:
-                restriction.did(action, change, user=self, *args, **kwargs)
+                restriction.did(action, change, *args, **kwargs)
+
+        self.provider.did(self, action, change, *args, **kwargs)
+
+    def log(self, *args, **kwargs):
+        return self.provider.log(*args, **kwargs)
 
 
 if __name__ == "__main__":
@@ -104,7 +178,7 @@ if __name__ == "__main__":
             ],
             'take_photo_private': [
                 {'class_': 'AccountAmountRestriction',
-                        'account_item': "credtis"}   # typop
+                        'account_item': "credtis"}   # typo
             ],
             'upload_photo': [
                 {'class_': 'PerTimeRestriction', 'limit_to': 100,
@@ -123,8 +197,18 @@ if __name__ == "__main__":
         }
     }
 
-    user = JerryUser(profile_state=profile_state)
+    class MockProvider:
+        def __init__(self):
+            self.calls = []
 
+        def did(self, *args, **kwargs):
+            self.calls.append(('did', args, kwargs))
+
+    mocky = MockProvider()
+
+    user = JerryUser('Mr.T', provider=mocky, profile_state=profile_state)
+
+    mocky.calls.should.be.empty
     user.can("take_photo").should.be.ok
     user.can("take_photo", 10).should.be.ok
 
@@ -145,10 +229,14 @@ if __name__ == "__main__":
     # typo
     user.can("take_photo_private").should.be.false
 
+    mocky.calls.should.be.empty
+
     ## do we have credits to share photos privately?
     user.did("share_photo_private", 1)
+    mocky.calls.should.have.length_of(1)
     user.can("share_photo_private").should.be.ok
     user.did("share_photo_private", 2)
+    mocky.calls.should.have.length_of(2)
     user.can("share_photo_private").should.be.false
 
     # not defined: default is deny
@@ -157,9 +245,11 @@ if __name__ == "__main__":
 
     ## lets modify and play again:
     user.did("upload_photo")
+    mocky.calls.should.have.length_of(3)
     user.can("upload_photo").should.be.ok
     user.can("upload_photo", 2).should.be.ok
     user.did("upload_photo", 2)
+    mocky.calls.should.have.length_of(4)
     user.can("upload_photo").should_not.be.ok
 
 
