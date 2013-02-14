@@ -108,11 +108,16 @@ class JerryUser(object):
         self.provider = provider
         self.user_id = user_id
         self.device_id = device_id
+        self.profile_name = ""
+        self.default = False
+        self.restrictions = {}
+        self.profile_state = {}
 
         if profile_state:
             self.load_state(profile_state)
 
     def load_state(self, profile_state):
+        self.profile_state = profile_state
         self.profile_name = profile_state.get("profile", None)
         self.default = profile_state['default'] == 'allow'
         self.restrictions = self._compile_restrictions(profile_state["states"])
