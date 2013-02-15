@@ -56,7 +56,7 @@ class AccountAmountRestriction(Restriction):
 class Provider(object):
 
     def __init__(self, key=None, secret=None,
-                end_point="http://localhost:9092/api/v1/"):
+                end_point="http://api.jerri.co/api/v1/"):
         self.key = key
         self.secret = secret
         self.end_point = end_point
