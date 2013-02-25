@@ -29,7 +29,9 @@ class Provider(BaseProvider):
             user_data = memcache.get("__jerry_u_{}".format(user.user_id))
         if not user_data and user.device_id:
             user_data = memcache.get("__jerry_d_{}".format(user.device_id))
-        if not user_data:
+        if user_data:
+            user_data = json.loads(user_data)
+        else:
             url = self.end_point + "permission_state"
             url += '?' + self._sign('GET', url, {
                 'user_id': user.user_id,
@@ -40,7 +42,7 @@ class Provider(BaseProvider):
                 raise ValueError("Can't fetch external profile:{}".format(
                             req.status_code))
 
-            user_data = json.loads(req.content)
+            user_data = json.loads(req.content)["result"]
             self._set_memcache(user, user_data)
 
         user.load_state(user_data)
