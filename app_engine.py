@@ -80,3 +80,4 @@ def jerry_login_proxy(**config):
         secret = config.get("secret")
         end_point = config.get("end_point")
     return ('/api/v1/permission_state', MyProxy)
+
