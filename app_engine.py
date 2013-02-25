@@ -5,6 +5,7 @@ from google.appengine.api import memcache
 
 from google.appengine.api import urlfetch
 
+import webapp2
 import json
 
 
@@ -51,3 +52,31 @@ class Provider(BaseProvider):
         # update memcache
         self._set_memcache(user, user.profile_state)
         return self.log(self, user, action, quantity)
+
+
+class _ProxyHandler(webapp2.RequestHandler):
+    key = None
+    secret = None
+    end_point = None
+
+    def _get_jerry_provider(self):
+        attrs = dict(key=self.key, secret=self.secret)
+        if self.end_point:
+            attrs["end_point"] = self.end_point
+        return Provider(**attrs)
+
+    def get(self):
+        provider = self._get_jerry_provider()
+        self.response.content_type = "application/json"
+
+        user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"))
+        self.response.write(json.dumps(user.profile_state))
+
+
+def jerry_login_proxy(**config):
+
+    class MyProxy(_ProxyHandler):
+        key = config.get("key")
+        secret = config.get("secret")
+        end_point = config.get("end_point")
+    return ('/api/v1/permission_state', MyProxy)
