@@ -70,7 +70,7 @@ class _ProxyHandler(webapp2.RequestHandler):
         self.response.content_type = "application/json"
 
         user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"))
-        self.response.write(json.dumps(user.profile_state))
+        self.response.write(json.dumps({"status": "success", "result": user.profile_state}))
 
 
 def jerry_login_proxy(**config):
