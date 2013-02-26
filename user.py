@@ -24,6 +24,12 @@ class BinaryRestriction(Restriction):
         return self.allow
 
 
+class LocalAmountRestriction(Restriction):
+
+    def allows(self, attr, change, *args, **kwargs):
+        return change < self.local_max
+
+
 class TotalAmountRestriction(Restriction):
 
     def allows(self, attr, change, *args, **kwargs):
@@ -101,6 +107,7 @@ class JerryUser(object):
         "BinaryRestriction": BinaryRestriction,
         "PerTimeRestriction": PerTimeRestriction,
         "TotalAmountRestriction": TotalAmountRestriction,
+        "LocalAmountRestriction": LocalAmountRestriction,
         "AccountAmountRestriction": AccountAmountRestriction,
     }
 
