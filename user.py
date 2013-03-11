@@ -95,9 +95,9 @@ class Provider(object):
         data = self._sign(url, "POST", params)
         return self._request("POST", url, data)
 
-    def signin(self, user_id=None, device_id=None):
+    def signin(self, user_id=None, device_id=None, **params):
         user = JerryUser(user_id=user_id, device_id=device_id, provider=self)
-        self._signin(user)
+        self._signin(user, **params)
         return user
 
 

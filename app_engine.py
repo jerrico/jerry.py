@@ -24,11 +24,11 @@ class Provider(BaseProvider):
 
         return data
 
-    def _signin(self, user):
+    def _signin(self, user, force_remote=False):
         user_data = None
-        if user.user_id:
+        if not force_remote and user.user_id:
             user_data = memcache.get("__jerry_u_{}".format(user.user_id))
-        if not user_data and user.device_id:
+        if not force_remote and not user_data and user.device_id:
             user_data = memcache.get("__jerry_d_{}".format(user.device_id))
         if user_data:
             user_data = json.loads(user_data)
@@ -69,7 +69,7 @@ class _ProxyHandler(webapp2.RequestHandler):
         provider = self._get_jerry_provider()
         self.response.content_type = "application/json"
 
-        user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"))
+        user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"), force_remote=self.request.GET.get("force", False))
         self.response.write(json.dumps({"status": "success", "result": user.profile_state}))
 
 
