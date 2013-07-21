@@ -24,6 +24,12 @@ class BinaryRestriction(Restriction):
         return self.allow
 
 
+class LocalAmountRestriction(Restriction):
+
+    def allows(self, attr, change, *args, **kwargs):
+        return change < self.local_max
+
+
 class TotalAmountRestriction(Restriction):
 
     def allows(self, attr, change, *args, **kwargs):
@@ -92,9 +98,9 @@ class Provider(object):
         data = self._sign("POST", url, params)
         return self._request("POST", url, data)
 
-    def signin(self, user_id=None, device_id=None):
+    def signin(self, user_id=None, device_id=None, **params):
         user = JerryUser(user_id=user_id, device_id=device_id, provider=self)
-        self._signin(user)
+        self._signin(user, **params)
         return user
 
 
@@ -104,6 +110,7 @@ class JerryUser(object):
         "BinaryRestriction": BinaryRestriction,
         "PerTimeRestriction": PerTimeRestriction,
         "TotalAmountRestriction": TotalAmountRestriction,
+        "LocalAmountRestriction": LocalAmountRestriction,
         "AccountAmountRestriction": AccountAmountRestriction,
     }
 

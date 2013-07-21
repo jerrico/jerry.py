@@ -24,11 +24,12 @@ class Provider(BaseProvider):
 
         return data
 
-    def _signin(self, user):
+
+    def _signin(self, user, force_remote=False):
         user_data = None
-        if user.user_id:
+        if not force_remote and user.user_id:
             user_data = memcache.get("__jerry_u_{}".format(user.user_id))
-        if not user_data and user.device_id:
+        if not force_remote and not user_data and user.device_id:
             user_data = memcache.get("__jerry_d_{}".format(user.device_id))
         if user_data:
             user_data = json.loads(user_data)
@@ -54,7 +55,7 @@ class Provider(BaseProvider):
         return self.log(self, user, action, quantity)
 
 
-class _ProxyHandler(webapp2.RequestHandler):
+class _ProxyBase(webapp2.RequestHandler):
     key = None
     secret = None
     end_point = None
@@ -65,19 +66,34 @@ class _ProxyHandler(webapp2.RequestHandler):
             attrs["end_point"] = self.end_point
         return Provider(**attrs)
 
+
+class _LoginProxyHandler(_ProxyBase):
     def get(self):
         provider = self._get_jerry_provider()
         self.response.content_type = "application/json"
 
-        user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"))
+        user = provider.signin(self.request.GET.get("user_id"), self.request.GET.get("device_id"), force_remote=self.request.GET.get("force", False))
         self.response.write(json.dumps({"status": "success", "result": user.profile_state}))
 
 
-def jerry_login_proxy(**config):
+class _PaymentProxyHandler(_ProxyBase):
+    def get(self):
+        provider = self._get_jerry_provider()
+        url = provider.end_point + "issue_payment"
+        url += '?' + provider._sign('GET', url, dict(self.request.GET))
+        return webapp2.redirect(url)
 
-    class MyProxy(_ProxyHandler):
+
+def _build_proxy(cls, key, config):
+    class MyProxy(cls):
         key = config.get("key")
         secret = config.get("secret")
         end_point = config.get("end_point")
-    return ('/api/v1/permission_state', MyProxy)
+    return ('/api/v1/{}'.format(key), MyProxy)
 
+
+def make_jerry_proxies(config):
+    return [
+        _build_proxy(_PaymentProxyHandler, 'issue_payment', config),
+        _build_proxy(_LoginProxyHandler, 'permission_state', config),
+    ]
