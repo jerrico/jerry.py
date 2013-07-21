@@ -80,13 +80,16 @@ class Provider(object):
             entry['unit'] = unit
 
         params = {
-            'user_id': user.user_id,
-            'device_id': user.device_id,
             'entries': json.dumps([entry])
         }
 
+        if user.user_id is not None:
+            params['user_id'] = user.user_id
+        if user.device_id is not None:
+            params['device_id'] = user.device_id
+
         url = self.end_point + "logger"
-        data = self._sign(url, "POST", params)
+        data = self._sign("POST", url, params)
         return self._request("POST", url, data)
 
     def signin(self, user_id=None, device_id=None):
